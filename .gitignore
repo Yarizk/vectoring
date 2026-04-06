@@ -1,0 +1,6 @@
+.env
+chroma_db
+archive
+plan.txt
+__pycache__
+*.pyc

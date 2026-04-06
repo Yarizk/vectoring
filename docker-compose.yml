@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Ollama service for local LLM (optional - only if using Ollama provider)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ksei-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    entrypoint: >
+      sh -c "
+        ollama serve &
+        sleep 5
+        ollama pull qwen2.5:7b
+        tail -f /dev/null
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    profiles:
+      - ollama
+
+  # FastAPI backend + React frontend
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ksei-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./chroma_db:/app/chroma_db
+      - ./archive:/app/archive
+      - ./raw_data:/app/raw_data
+      - ./.env:/app/.env:ro
+      - ./frontend/dist:/app/frontend/dist:ro  # Serve React build
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_DB_PATH=/app/chroma_db
+    depends_on:
+      - ollama
+    command: uvicorn src.api:app --host 0.0.0.0 --port 8000
+
+volumes:
+  ollama_data:
