@@ -11,6 +11,7 @@ import requests
 from typing import List, Dict, Any, Optional
 from embedder import search as base_search
 from search_utils import hybrid_search, extract_tickers, get_ticker_summary
+from stockbit_enricher import enrich_tickers, format_enrichment_for_prompt
 from config import (
     LLM_PROVIDER, OLLAMA_BASE_URL, OLLAMA_MODEL,
     JATEVO_BASE_URL, JATEVO_API_KEY, JATEVO_MODEL,
@@ -197,7 +198,8 @@ def generate_enhanced_prompt(
     query: str,
     contexts: List[Dict[str, Any]],
     mode: str = "balanced",
-    include_quality_analysis: bool = True
+    include_quality_analysis: bool = True,
+    enrichment_text: str = "",
 ) -> str:
     """Generate enhanced prompt with quality analysis and mode-specific instructions."""
     
@@ -232,6 +234,13 @@ DATA QUALITY ASSESSMENT:
         "explorative": "\n[MODE: EXPLORATIVE - Broad analysis with confidence markers]\n"
     }.get(mode, "")
     
+    enrichment_section = ""
+    if enrichment_text:
+        enrichment_section = f"""
+{enrichment_text}
+---
+"""
+
     prompt = f"""{system_prompt}
 
 {mode_guidance}
@@ -239,11 +248,11 @@ DATA QUALITY ASSESSMENT:
 CONTEXT INFORMATION:
 {context_block}
 ---
-
+{enrichment_section}
 USER QUESTION: {query}
 
 Provide your answer with appropriate confidence markers. If you cannot answer confidently, say so explicitly."""
-    
+
     return prompt
 
 
@@ -283,7 +292,8 @@ def ask_enhanced(
             "quality": None,
             "success": False,
             "mode": mode,
-            "error": "; ".join(errors)
+            "error": "; ".join(errors),
+            "enrichment": {},
         }
     
     # Check provider availability
@@ -295,7 +305,8 @@ def ask_enhanced(
             "quality": None,
             "success": False,
             "mode": mode,
-            "error": f"Ollama is not running at {OLLAMA_BASE_URL}"
+            "error": f"Ollama is not running at {OLLAMA_BASE_URL}",
+            "enrichment": {},
         }
     
     # Retrieve contexts
@@ -325,7 +336,7 @@ def ask_enhanced(
     if not contexts:
         return {
             "question": question,
-            "answer": "I couldn't find any relevant data for your question. " + 
+            "answer": "I couldn't find any relevant data for your question. " +
                      "This could be because:\n" +
                      "- The ticker/company isn't in our database\n" +
                      "- The data for that time period isn't available\n" +
@@ -335,12 +346,19 @@ def ask_enhanced(
             "quality": quality,
             "success": True,
             "mode": mode,
-            "error": None
+            "error": None,
+            "enrichment": {},
         }
     
+    # Live enrichment from Stockbit
+    tickers = extract_tickers(question)
+    enrichment_data = enrich_tickers(tickers) if tickers else {}
+    enrichment_text = format_enrichment_for_prompt(enrichment_data)
+
     # Generate enhanced prompt
     prompt = generate_enhanced_prompt(
-        question, contexts, mode, include_quality_analysis
+        question, contexts, mode, include_quality_analysis,
+        enrichment_text=enrichment_text,
     )
     
     # Get temperature from mode config
@@ -360,7 +378,8 @@ def ask_enhanced(
             "quality": quality,
             "success": False,
             "mode": mode,
-            "error": response['error']
+            "error": response['error'],
+            "enrichment": enrichment_data,
         }
     
     # Format sources for response
@@ -397,7 +416,8 @@ def ask_enhanced(
         "success": True,
         "mode": mode,
         "error": None,
-        "usage": response.get('usage', {})
+        "usage": response.get('usage', {}),
+        "enrichment": enrichment_data,
     }
 
 
