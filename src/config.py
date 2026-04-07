@@ -21,8 +21,8 @@ JATEVO_BASE_URL = os.getenv("JATEVO_BASE_URL", "https://jatevo.id/api/open/v1/in
 JATEVO_API_KEY = os.getenv("JATEVO_API_KEY", "")
 JATEVO_MODEL = os.getenv("JATEVO_MODEL", "qwen3.5-plus")
 
-# Stockbit API Configuration
-STOCKBIT_TOKEN = os.getenv("STOCKBIT_TOKEN", "")
+# Market Data API Configuration (optional, enables live enrichment)
+STOCKBIT_TOKEN = os.getenv("MARKET_DATA_TOKEN", os.getenv("STOCKBIT_TOKEN", ""))
 
 # Embedding Configuration
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
