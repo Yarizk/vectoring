@@ -50,6 +50,7 @@ export function ChatInput() {
         sources: response.sources,
         latency,
         quality: response.quality,
+        enrichment: response.enrichment,
       };
 
       addMessage(aiMessage);

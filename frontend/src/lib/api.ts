@@ -79,21 +79,30 @@ export async function getIngestionStatus(): Promise<{
   return fetchApi('/ingest/status');
 }
 
-// Market data placeholder (for Stockbit integration)
+// Market data (Stockbit integration)
 export async function getMarketData(
   ticker: string
-): Promise<{ ticker: string; price: number; change: number } | null> {
-  // Placeholder - will be implemented with Stockbit API
-  console.log('Market data fetch requested for:', ticker);
-  return null;
+): Promise<{ ticker: string; enrichment: any; available: boolean } | null> {
+  try {
+    return await fetchApi(`/api/ticker/${ticker.toUpperCase()}`);
+  } catch {
+    return null;
+  }
 }
 
 export async function getBatchMarketData(
   tickers: string[]
-): Promise<Record<string, { price: number; change: number }>> {
-  // Placeholder - will be implemented with Stockbit API
-  console.log('Batch market data fetch requested for:', tickers);
-  return {};
+): Promise<Record<string, any>> {
+  const results: Record<string, any> = {};
+  await Promise.all(
+    tickers.map(async (ticker) => {
+      const data = await getMarketData(ticker);
+      if (data?.available) {
+        results[ticker] = data.enrichment;
+      }
+    })
+  );
+  return results;
 }
 
 export { ApiError };

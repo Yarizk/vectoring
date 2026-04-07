@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { useChatStore, useUIStore } from '@/stores';
 import { cn, formatDate } from '@/lib/utils';
 import type { Message, Source } from '@/types';
+import { MarketContext } from './MarketContext';
 
 interface AIMessageProps {
   message: Message;
@@ -83,6 +84,11 @@ export function AIMessage({ message }: AIMessageProps) {
             </div>
           )}
           
+          {/* Market Context Cards */}
+          {message.enrichment && Object.keys(message.enrichment).length > 0 && (
+            <MarketContext enrichment={message.enrichment} />
+          )}
+
           {/* Markdown Content */}
           <div className="prose prose-invert max-w-none text-[var(--text-primary)] leading-relaxed">
             <ReactMarkdown 
