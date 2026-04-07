@@ -18,6 +18,7 @@ from rag_enhanced import ask_enhanced, RESPONSE_MODES, analyze_data_quality, gen
 from ingest_json import ingest_all_json_files
 from ingest_pdf import ingest_all_pdfs
 from config import LLM_PROVIDER, JATEVO_BASE_URL, JATEVO_MODEL, validate_config
+from stockbit_enricher import enrich_tickers
 
 # Get the project root directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -64,6 +65,7 @@ class AskResponse(BaseModel):
     mode: str
     success: bool
     error: Optional[str]
+    enrichment: Optional[Dict[str, Any]] = None
 
 
 class StatsResponse(BaseModel):
@@ -188,7 +190,8 @@ def ask_endpoint(request: AskRequest):
         quality=result.get("quality"),
         mode=result["mode"],
         success=result["success"],
-        error=result.get("error")
+        error=result.get("error"),
+        enrichment=result.get("enrichment"),
     )
 
 
@@ -246,7 +249,15 @@ def ingest_endpoint(
             if not json_only:
                 pdf_result = ingest_all_pdfs()
                 result["pdf"] = pdf_result
-            
+
+                # Stockbit enrichment ingestion (runs after KSEI data)
+                try:
+                    from stockbit_ingest import ingest_all_stockbit
+                    stockbit_result = ingest_all_stockbit()
+                    result["stockbit"] = stockbit_result
+                except Exception as e:
+                    result["stockbit"] = {"error": str(e)}
+
             ingestion_status["last_result"] = result
             ingestion_status["running"] = False
             return result
@@ -292,6 +303,22 @@ async def serve_frontend():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "KSEI RAG API", "frontend": "Not built"}
+
+@app.get("/api/ticker/{symbol}")
+def get_ticker_enrichment(symbol: str):
+    """
+    Get live Stockbit enrichment data for a single ticker.
+    Returns foreign flow, price performance, and recent corporate actions.
+    """
+    symbol = symbol.upper()
+    enrichment = enrich_tickers([symbol])
+    data = enrichment.get(symbol, {})
+    return {
+        "ticker": symbol,
+        "enrichment": data,
+        "available": bool(data and any(v for v in data.values())),
+    }
+
 
 @app.get("/{full_path:path}")
 async def serve_frontend_catch_all(full_path: str):
