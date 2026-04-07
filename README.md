@@ -1,6 +1,26 @@
 # KSEI Intelligence
 
-A RAG (Retrieval-Augmented Generation) system for querying Indonesian stock ownership data from KSEI. Ask questions in natural language — Indonesian or English — and get answers grounded in real data with source citations.
+A RAG (Retrieval-Augmented Generation) system for querying Indonesian stock ownership data from KSEI (Kustodian Sentral Efek Indonesia). Ask questions in natural language — Indonesian or English — and get answers grounded in real data with source citations.
+
+**The core idea:** instead of sending your entire dataset to an LLM (expensive, slow, context-limited), we pre-process everything into a local vector database. When you ask a question, only the most relevant chunks are retrieved and sent to the LLM — keeping answers fast, accurate, and grounded in actual data.
+
+### Data sources
+
+**KSEI PDF reports** — monthly ownership reports published by KSEI, extracted page-by-page using `pdfplumber` and chunked into 800-character overlapping segments. These contain the authoritative ownership percentages, holder names, and domicile information.
+
+**KSEI JSON data** — structured ownership records parsed into two chunk types: `ticker_summary` (aggregated foreign/local split per stock) and `holder_focus` (one chunk per significant holder above 1%, enabling investor-specific queries).
+
+**Live market data API** — at query time, real-time data (foreign net flow, price performance across 1W/1M/3M/YTD/1Y periods, corporate actions) is fetched and injected directly into the LLM prompt alongside the retrieved context. This enrichment is optional — the system works without it.
+
+### Why local embeddings and a vector database
+
+Text is converted into 384-dimensional numerical vectors using `sentence-transformers/all-MiniLM-L6-v2`, a model that runs entirely on CPU with no API calls or internet required. Vectors are stored in ChromaDB, a local persistent vector database.
+
+This approach means:
+- **No dependency on an external embedding API** — ingestion and search work offline
+- **Semantic search, not keyword search** — "who owns the most shares in BBCA" matches chunks that say "largest shareholder" or "kepemilikan terbesar" even without exact word overlap
+- **Privacy** — your data never leaves your machine during the retrieval step; only the retrieved chunks (not the full database) are sent to the LLM
+- **Metadata filtering** — ChromaDB allows filtering by ticker, date, or source type before doing the vector search, combining precision with semantic flexibility
 
 ---
 
