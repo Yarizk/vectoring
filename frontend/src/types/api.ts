@@ -1,3 +1,5 @@
+import type { EnrichmentData } from './enrichment';
+
 export interface ApiResponse<T> {
   data?: T;
   error?: string;
@@ -33,6 +35,7 @@ export interface AskResponse {
   mode: string;
   success: boolean;
   error?: string;
+  enrichment?: EnrichmentData;
 }
 
 export interface ResponseMode {

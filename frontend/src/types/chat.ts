@@ -1,3 +1,5 @@
+import type { EnrichmentData } from './enrichment';
+
 export interface Source {
   id: string;
   source: 'ksei_pdf' | 'ksei_json' | 'market_data';
@@ -30,6 +32,7 @@ export interface Message {
     gaps: string[];
     recommendations: string[];
   };
+  enrichment?: EnrichmentData;
 }
 
 export interface ChatResponse {
