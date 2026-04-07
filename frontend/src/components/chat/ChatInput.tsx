@@ -1,71 +1,32 @@
 import { useState, useRef, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import { useChatStore } from '@/stores';
+import { useChat } from '@/hooks/useChat';
 import { ModeSelector, QualityBadge } from './ModeSelector';
-import { generateId } from '@/lib/utils';
 import type { Message } from '@/types';
-import { askQuestion } from '@/lib/api';
 
 export function ChatInput() {
   const [input, setInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [lastQuality, setLastQuality] = useState<Message['quality']>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { addMessage, setLoading, mode, setMode } = useChatStore();
+  const { mode, setMode, isLoading, messages } = useChatStore();
+  const { sendMessage } = useChat();
+
+  // Get quality from last AI message
+  const lastQuality = messages
+    .slice()
+    .reverse()
+    .find((m): m is Message & { quality: NonNullable<Message['quality']> } =>
+      m.role === 'assistant' && !!m.quality
+    )?.quality;
 
   const handleSubmit = async () => {
-    if (!input.trim() || isSubmitting) return;
-
-    const userMessage: Message = {
-      id: generateId(),
-      role: 'user',
-      content: input.trim(),
-      timestamp: new Date(),
-    };
-
-    addMessage(userMessage);
+    if (!input.trim() || isLoading) return;
+    const text = input.trim();
     setInput('');
-    setIsSubmitting(true);
-    setLoading(true);
-
-    const startTime = Date.now();
-
-    try {
-      const response = await askQuestion({
-        question: userMessage.content,
-        n_results: 5,
-        temperature: 0.3,
-        mode: mode as 'strict' | 'balanced' | 'explorative',
-        include_quality: true,
-      });
-
-      const latency = (Date.now() - startTime) / 1000;
-      setLastQuality(response.quality);
-
-      const aiMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: response.answer || 'Maaf, saya tidak dapat menjawab pertanyaan tersebut.',
-        timestamp: new Date(),
-        sources: response.sources,
-        latency,
-        quality: response.quality,
-        enrichment: response.enrichment,
-      };
-
-      addMessage(aiMessage);
-    } catch (error) {
-      const errorMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: 'Terjadi kesalahan saat memproses pertanyaan. Silakan coba lagi.',
-        timestamp: new Date(),
-      };
-      addMessage(errorMessage);
-    } finally {
-      setIsSubmitting(false);
-      setLoading(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
     }
+    await sendMessage(text);
   };
 
   const handleKeyDown = useCallback(
@@ -81,17 +42,11 @@ export function ChatInput() {
   const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
     target.style.height = 'auto';
-    target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+    target.style.height = Math.min(target.scrollHeight, 180) + 'px';
   }, []);
 
   return (
     <div className="max-w-4xl mx-auto">
-      {/* Mode Selector */}
-      <div className="flex items-center justify-between mb-3">
-        <ModeSelector value={mode} onChange={setMode} />
-        <QualityBadge quality={lastQuality} />
-      </div>
-
       <div className="relative">
         <textarea
           ref={textareaRef}
@@ -99,46 +54,35 @@ export function ChatInput() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder={`Ask in ${mode} mode... (Cmd+Enter to send)`}
-          className="w-full bg-[var(--bg-elevated)] text-[var(--text-primary)] rounded-xl
+          placeholder="Ask a question... (Enter to send)"
+          className="w-full bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] rounded-lg
                      border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none
-                     pl-4 pr-14 py-3 min-h-[56px] max-h-[200px] resize-none
+                     pl-3 pr-10 py-2.5 min-h-[44px] max-h-[180px] resize-none
                      placeholder-[var(--text-muted)] transition-colors"
           rows={1}
-          disabled={isSubmitting}
+          disabled={isLoading}
         />
-        
+
         <button
           onClick={handleSubmit}
-          disabled={!input.trim() || isSubmitting}
-          className="absolute right-3 bottom-3 p-2 rounded-lg
+          disabled={!input.trim() || isLoading}
+          className="absolute right-2 bottom-2 p-1.5 rounded
                      bg-[var(--accent)] text-white
-                     hover:bg-[var(--accent-hover)] disabled:opacity-50
+                     hover:bg-[var(--accent-hover)] disabled:opacity-40
                      disabled:cursor-not-allowed transition-colors"
         >
-          <Send size={18} />
+          <Send size={14} />
         </button>
       </div>
-      
-      <div className="mt-2 flex items-center justify-between text-xs text-[var(--text-muted)]">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)]">Cmd</kbd>
-            <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)]">K</kbd>
-            <span>to focus</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)]">Enter</kbd>
-            <span>to send</span>
+
+      <div className="mt-1.5 flex items-center justify-between">
+        <ModeSelector value={mode} onChange={setMode} />
+        <div className="flex items-center gap-2">
+          <QualityBadge quality={lastQuality} />
+          <span className="text-xs text-[var(--text-muted)]">
+            <kbd className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] text-xs">Enter</kbd> send
           </span>
         </div>
-        
-        {/* Mode description */}
-        <span className="italic">
-          {mode === 'strict' && 'Factual only - no assumptions'}
-          {mode === 'balanced' && 'Data + reasonable connections'}
-          {mode === 'explorative' && 'Broader analysis with confidence markers'}
-        </span>
       </div>
     </div>
   );

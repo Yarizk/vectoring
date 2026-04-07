@@ -1,358 +1,368 @@
-# KSEI RAG - Indonesian Stock Ownership RAG System
+# KSEI Intelligence
 
-A Retrieval-Augmented Generation (RAG) system for querying Indonesian stock market ownership data from KSEI (Indonesia Central Securities Depository) using natural language.
+A **Retrieval-Augmented Generation (RAG)** system for querying Indonesian stock market ownership data from KSEI (Indonesia Central Securities Depository). Ask questions in natural language — Indonesian or English — and get answers grounded in real ownership data, enriched with live market context from Stockbit.
 
-## Architecture
+---
+
+## Screenshots
+
+### Chat Interface
+The main chat view uses a Bloomberg Terminal-inspired dark theme with IBM Plex Sans typography, three response mode selectors (Strict / Balanced / Explorative), and inline source citations.
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  User Query │────▶│  ChromaDB    │────▶│    Qwen     │
-│   (React)   │     │  Vector DB   │     │ via Jatevo  │
-└─────────────┘     └──────────────┘     └──────┬──────┘
-       │                                        │
-       │         ┌──────────────────────────────┘
-       │         │
-       ▼         ▼
-┌─────────────────────────┐
-│  Answer + Source Citations│
-└─────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  [≡] KSEI Intelligence   [Chat] [Pipeline] [Dashboard]    [⊞]      │  ← 40px header
+├──────────────┬─────────────────────────────────┬────────────────────┤
+│ Search hist. │                                 │ Sources (3)        │
+│              │  You                            │  #1 BBCA · 96%    │
+│ Today        │  Siapa pemegang terbesar BBCA?  │  #2 BBCA · 91%    │
+│ > Siapa...   │                                 │  #3 BBCA · 88%    │
+│              │  KSEI Intelligence  0.3s        │                    │
+│ Quick        │  ┌─ BBCA ─ live ──────────┐    │                    │
+│ Actions      │  │ Net Buy: Rp 1.2T       │    │                    │
+│              │  │ 1W +0.8% 1M +3.2% ...  │    │                    │
+│ [Trash]      │  └────────────────────────┘    │                    │
+│              │  [CERTAIN] Kepemilikan...       │                    │
+│              │                                 │                    │
+│              ├─────────────────────────────────┤                    │
+│              │ Ask a question...        [Send] │                    │
+│              │ [Strict] [Balanced] [Explorative│                    │
+└──────────────┴─────────────────────────────────┴────────────────────┘
 ```
 
-**Data Flow:**
-1. **Ingest**: KSEI PDFs + JSON → ChromaDB (vector embeddings)
-2. **Query**: User question → semantic search → retrieve relevant chunks
-3. **Generate**: LLM (Qwen 2.5) generates answer based on retrieved context
-4. **Cite**: Sources are displayed with each answer
+### Response Modes
+| Mode | Behavior | Temperature |
+|------|----------|-------------|
+| **Strict** | Facts from retrieved data only, no inference | 0.1 |
+| **Balanced** | Data + reasonable connections, marks inferences | 0.3 |
+| **Explorative** | Broader analysis, confidence markers throughout | 0.5 |
 
-## Features
+---
 
-- 🔍 **Natural Language Queries**: Ask questions in Indonesian or English
-- 📊 **Dual Data Sources**: KSEI PDF reports + structured JSON data
-- 🎯 **Metadata Filtering**: Filter by ticker symbol, date, source type
-- 📚 **Source Citations**: Every answer includes references to source documents
-- 🤖 **Dual LLM Support**: Local Ollama (free) or Jatevo API (better performance, default)
-- 🎨 **React Frontend**: Bloomberg Terminal aesthetic with rich data visualization
-- 🏠 **Privacy-First**: Local embeddings, option for local LLM
-- 🐳 **Docker Support**: One-command deployment with docker-compose
+## What's Been Built
 
-## Prerequisites
+### Core RAG System
+- **Hybrid search** — ticker extraction from queries + metadata-filtered ChromaDB lookup + semantic fallback
+- **Three response modes** (strict/balanced/explorative) with temperature control
+- **Confidence markers** — `[CERTAIN]`, `[INFERRED]`, `[UNCERTAIN]`, `[NOT_AVAILABLE]`, `[BEYOND_DATA]` inline in responses
+- **Data quality scoring** — relevance %, coverage assessment, gap analysis per response
+- **Bilingual** — handles queries in both Indonesian and English
 
+### Stockbit Integration (Two-Layer Enrichment)
+1. **Static layer** — periodic ingestion of company profiles, financial ratios (P/E, P/B, ROE, ROA), analyst consensus, and major holders into ChromaDB alongside KSEI data
+2. **Dynamic layer** — live per-query fetch of foreign flow, price performance (1W/1M/3M/6M/YTD/1Y), and corporate actions injected directly into the LLM prompt
+
+### Data Pipeline
+```
+archive/*.json  ──────┐
+                      ├──▶  embedder.py  ──▶  ChromaDB (ksei_data)
+raw_data/*.pdf  ──────┘
+                               │
+stockbit API  ──▶  stockbit_ingest.py ──▶  ChromaDB (company_profile,
+                                            financial_ratios, analyst_consensus,
+                                            major_holders_stockbit chunks)
+```
+
+### Query Pipeline
+```
+User question
+    │
+    ├──▶  search_utils.py  ──▶  ticker extraction
+    │                            hybrid ChromaDB search
+    │
+    ├──▶  stockbit_enricher.py  ──▶  live foreign flow + price perf + corp actions
+    │
+    ├──▶  rag_enhanced.py  ──▶  prompt assembly (context + enrichment + mode)
+    │
+    └──▶  LLM (Jatevo qwen3.5-plus / Ollama qwen2.5:7b)
+              │
+              └──▶  Answer + sources + quality score + enrichment data
+```
+
+### Frontend
+Bloomberg Terminal-inspired React app with:
+- **IBM Plex Sans** body font + **IBM Plex Mono** for code/data
+- Three-panel layout: session history sidebar / chat / sources panel
+- **MarketContext cards** — per-ticker live data block shown above each AI response
+- Compact information-dense design (40px header, 4px scrollbar, tight padding throughout)
+- Source citations with relevance %, expandable quality inspector
+- Quick action buttons that trigger full API calls
+
+### API Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/ask` | RAG query with enrichment |
+| `GET` | `/api/ticker/{symbol}` | Live enrichment for a single ticker |
+| `GET` | `/modes` | Available response modes |
+| `GET` | `/stats` | ChromaDB collection stats |
+| `GET` | `/health` | API + LLM connectivity check |
+| `POST` | `/ingest` | Trigger background data ingestion |
+| `GET` | `/ingest/status` | Ingestion job status |
+
+---
+
+## Tech Stack
+
+### Backend
+| Layer | Technology |
+|-------|------------|
+| Language | Python 3.10+ |
+| API Framework | FastAPI + Uvicorn |
+| Vector DB | ChromaDB (local, persistent) |
+| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` (local) |
+| LLM (primary) | Jatevo API — `qwen3.5-plus` |
+| LLM (fallback) | Ollama — `qwen2.5:7b` (local) |
+| Market data | Stockbit Python client (custom) |
+| PDF parsing | pdfplumber |
+| Config | python-dotenv + pydantic-settings |
+
+### Frontend
+| Layer | Technology |
+|-------|------------|
+| Framework | React 19 + TypeScript |
+| Build tool | Vite 6 |
+| Styling | Tailwind CSS 3 |
+| State | Zustand 5 (with localStorage persistence) |
+| Routing | React Router 7 |
+| Table | TanStack Table 8 |
+| Markdown | react-markdown + remark-gfm |
+| Icons | lucide-react |
+| Font | IBM Plex Sans / IBM Plex Mono (Google Fonts) |
+
+### Infrastructure
+| Component | Technology |
+|-----------|------------|
+| Container | Docker + docker-compose |
+| Serving | FastAPI static files (React build) |
+| Dev proxy | Vite → `localhost:8000` |
+
+---
+
+## Project Structure
+
+```
+vectoring/
+├── src/
+│   ├── api.py                # FastAPI app, all endpoints
+│   ├── config.py             # Env-based config (LLM provider, tokens)
+│   ├── embedder.py           # sentence-transformers + ChromaDB ops
+│   ├── ingest_json.py        # KSEI JSON → ChromaDB chunks
+│   ├── ingest_pdf.py         # KSEI PDF → ChromaDB chunks
+│   ├── rag.py                # Basic RAG pipeline
+│   ├── rag_enhanced.py       # Enhanced RAG (modes, quality, enrichment)
+│   ├── search_utils.py       # Hybrid search + ticker extraction
+│   ├── stockbit_enricher.py  # Live Stockbit query-time enrichment
+│   └── stockbit_ingest.py    # Periodic Stockbit data ingestion
+├── stockbit/                 # Stockbit Python client library
+│   ├── client.py             # Main client
+│   ├── api/                  # API modules (company, financials, quotes…)
+│   └── models/               # Pydantic response models
+├── tests/
+│   ├── conftest.py           # Shared fixtures (mock Stockbit responses)
+│   ├── test_config.py
+│   ├── test_rag_integration.py
+│   ├── test_stockbit_enricher.py
+│   └── test_stockbit_ingest.py
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── chat/         # ChatContainer, AIMessage, MarketContext…
+│   │   │   ├── layout/       # Header, LeftSidebar, RightPanel…
+│   │   │   └── ui/           # KseiLogo SVG component
+│   │   ├── hooks/            # useChat, useTicker, usePipeline
+│   │   ├── stores/           # Zustand stores (chat, ui, pipeline)
+│   │   ├── types/            # TypeScript interfaces
+│   │   └── lib/              # api.ts, utils, constants
+│   └── public/
+│       └── favicon.svg       # Custom chart-mark favicon
+├── archive/                  # KSEI JSON data files (gitignored)
+├── raw_data/                 # KSEI PDF reports (gitignored)
+├── chroma_db/                # Vector DB storage (gitignored)
+├── docker-compose.yml
+├── requirements.txt
+└── .env.example
+```
+
+---
+
+## Setup
+
+### Prerequisites
 - Python 3.10+
-- [Ollama](https://ollama.com/) installed locally (for local LLM option)
-- OR Jatevo API key (for cloud LLM option)
-- 8GB+ RAM recommended (for local Ollama)
+- Node.js 18+
+- Jatevo API key **or** Ollama installed locally
+- Stockbit account token (optional — for live market enrichment)
 
-## Quick Start
-
-### Option 1: Local LLM (Ollama) - Free, Runs Locally
-
-#### 1. Install Ollama and Pull Model
+### 1. Clone and configure
 
 ```bash
-# Install Ollama (macOS/Linux)
-curl -fsSL https://ollama.com/install.sh | sh
+git clone https://github.com/Yarizk/vectoring.git
+cd vectoring
 
-# Pull Qwen 2.5 7B model (~4.4GB)
-ollama pull qwen2.5:7b
-
-# Start Ollama server
-ollama serve
-```
-
-#### 2. Configure Environment
-
-```bash
-# Create .env file
 cp .env.example .env
-
-# Edit .env to use Ollama
-LLM_PROVIDER=ollama
-OLLAMA_MODEL=qwen2.5:7b
+# Edit .env — set LLM_PROVIDER, JATEVO_API_KEY, STOCKBIT_TOKEN
 ```
 
-### Option 2: Cloud LLM (Jatevo API) - Better Performance
-
-#### 1. Get API Key
-
-Sign up at [Jatevo](https://jatevo.id) and get your API key.
-
-#### 2. Configure Environment
-
-```bash
-# Create .env file
-cp .env.example .env
-
-# Edit .env to use Jatevo
-LLM_PROVIDER=jatevo
-JATEVO_API_KEY=your_actual_api_key_here
-JATEVO_MODEL=qwen3.5-plus
-```
-
-### 3. Install Dependencies
+### 2. Install backend dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Ingest Data
+### 3. Ingest data
 
-Data files should be placed in:
-- `archive/*.json` - KSEI JSON data files
-- `raw_data/*.pdf` - KSEI PDF reports
+Place files in `archive/` (JSON) and `raw_data/` (PDF), then:
 
-Run ingestion:
 ```bash
 cd src
 
-# Ingest JSON data
-python ingest_json.py
-
-# Ingest PDF data
-python ingest_pdf.py
+python ingest_json.py   # KSEI ownership JSON
+python ingest_pdf.py    # KSEI monthly PDF reports
 ```
 
-### 5. Start Services
+Optionally ingest Stockbit enrichment data into ChromaDB:
 
-#### Option A: Development (Hot Reload)
-
-Terminal 1 - API:
 ```bash
-cd src
-python api.py
+python stockbit_ingest.py   # company profiles, ratios, consensus
 ```
 
-Terminal 2 - React Frontend:
+### 4. Run
+
+**Development** (hot reload):
 ```bash
-cd frontend
-npm install
-npm run dev
+# Terminal 1 — API
+cd src && python api.py
+
+# Terminal 2 — Frontend
+cd frontend && npm install && npm run dev
+# Open http://localhost:5173
 ```
 
-Open http://localhost:5173 in your browser.
-
-#### Option B: Production
-
-Build and serve from API:
+**Production** (single server on :8000):
 ```bash
-cd frontend
-npm install
-npm run build
-
-cd ..
+cd frontend && npm run build && cd ..
 python src/api.py
+# Open http://localhost:8000
 ```
 
-Open http://localhost:8000 in your browser.
-
-## Docker Deployment
-
+**Docker**:
 ```bash
-# Build and start all services
 docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
+# Open http://localhost:8000
 ```
 
-Services:
-- Ollama: http://localhost:11434
-- API + Frontend: http://localhost:8000
+---
 
-## API Usage
+## Environment Variables
 
-### Ask a Question
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `jatevo` | `jatevo` or `ollama` |
+| `JATEVO_API_KEY` | — | Required for Jatevo |
+| `JATEVO_MODEL` | `qwen3.5-plus` | Jatevo model ID |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Ollama model |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model |
+| `CHROMA_DB_PATH` | `./chroma_db` | Vector DB storage path |
+| `STOCKBIT_TOKEN` | — | Optional — enables live market enrichment |
+| `API_HOST` | `0.0.0.0` | API bind address |
+| `API_PORT` | `8000` | API port |
 
-```bash
-curl -X POST http://localhost:8000/ask \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "Siapa pemegang saham terbesar BBCA?",
-    "n_results": 5,
-    "temperature": 0.3
-  }'
-```
-
-### Get Stats
-
-```bash
-curl http://localhost:8000/stats
-```
-
-### Health Check
-
-```bash
-curl http://localhost:8000/health
-```
+---
 
 ## Example Queries
 
-| Question | Expected Answer |
-|----------|-----------------|
-| "Siapa pemegang saham terbesar BBRI?" | Danantara Asset Management (52.66%) |
-| "Berapa kepemilikan asing di BBCA?" | Foreign ownership percentage |
-| "Saham apa yang kepemilikan lokalnya tinggi?" | Stocks with high local ownership |
-| "Compare TLKM and EXCL foreign ownership" | Comparison of both stocks |
-| "Who is the largest holder of GOTO?" | Top shareholder name and % |
-
-## Project Structure
-
 ```
-ksei-rag/
-├── src/
-│   ├── embedder.py      # Embedding + ChromaDB operations
-│   ├── ingest_json.py   # JSON data ingestion
-│   ├── ingest_pdf.py    # PDF data ingestion
-│   ├── rag.py           # Core RAG logic
-│   ├── api.py           # FastAPI endpoints
-│   ├── search_utils.py  # Hybrid search utilities
-│   └── config.py        # Configuration management
-├── frontend/            # React frontend
-│   ├── src/            # React source code
-│   └── package.json    # Node dependencies
-├── archive/             # KSEI JSON files
-├── raw_data/            # KSEI PDF files
-├── chroma_db/           # ChromaDB storage (auto-created)
-├── docker-compose.yml   # Docker orchestration
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
+Siapa pemegang saham terbesar BBRI?
+→ Danantara Asset Management dengan 52.66%
+
+Berapa kepemilikan asing di BBCA?
+→ [CERTAIN] 43.2% berdasarkan data KSEI Maret 2026
+
+Compare foreign ownership: TLKM vs EXCL
+→ Side-by-side comparison with source citations
+
+GOTO top 5 holders?
+→ Structured list with names and percentages
+
+Saham apa yang kepemilikan lokalnya meningkat bulan ini?
+→ Analysis with data quality score and coverage report
 ```
 
-## Response Modes
+---
 
-The chatbot supports three response modes to control the balance between factual accuracy and analytical depth:
+## Data Chunk Types in ChromaDB
 
-| Mode | Description | Use When |
-|------|-------------|----------|
-| **Strict** | Only use retrieved data, no assumptions | You need verified facts only |
-| **Balanced** | Data + reasonable connections | You want analysis grounded in data |
-| **Explorative** | Broader analysis with confidence markers | You want insights beyond raw data |
+All stored in the `ksei_data` collection:
 
-### Confidence Markers
+| `chunk_type` | Source | Content |
+|---|---|---|
+| `ticker_summary` | KSEI JSON | Per-stock aggregated ownership totals |
+| `holder_focus` | KSEI JSON | Individual holder >1% linked to ticker+date |
+| `pdf_page` | KSEI PDF | 800-char text chunks from monthly reports |
+| `company_profile` | Stockbit | Sector, market cap, description |
+| `financial_ratios` | Stockbit | P/E, P/B, ROE, ROA, dividend yield |
+| `analyst_consensus` | Stockbit | Buy/Hold/Sell counts, price target |
+| `major_holders_stockbit` | Stockbit | Institutional holder details |
 
-The bot marks its responses with confidence indicators:
-- **[CERTAIN]** - Fact directly from retrieved data
-- **[INFERRED]** - Reasonable conclusion from data
-- **[UNCERTAIN]** - Educated guess with limited data
-- **[NOT_AVAILABLE]** - Data doesn't exist in context
-- **[BEYOND_DATA]** - Analysis going beyond retrieved context (explorative mode only)
+---
 
-### Data Quality Assessment
+## What's Next
 
-Each response includes a quality score showing:
-- **Relevance Score** (0-100%): How well the retrieved data matches the query
-- **Coverage**: complete/partial/minimal/none - how much of the query is covered
-- **Gaps**: What's missing from the data
-- **Recommendations**: How to improve the query
+### High Priority
+- [ ] **Authentication** — user accounts, per-user chat history persistence
+- [ ] **Streaming responses** — SSE/WebSocket for token-by-token output instead of waiting for full response
+- [ ] **Date-range filtering** — UI controls to scope queries to specific months
+- [ ] **Ticker autocomplete** — typeahead suggestions in the chat input
 
-## Chunking Strategy
+### Data & Enrichment
+- [ ] **More KSEI data** — ingest 12+ months of history for trend analysis
+- [ ] **Scheduled ingestion** — cron job to auto-update ChromaDB when new KSEI files are released
+- [ ] **Stockbit websocket** — real-time price streaming into the MarketContext cards
+- [ ] **Corporate actions calendar** — dedicated view for upcoming ex-dates and dividends
 
-The system uses a hybrid chunking approach optimized for financial data:
+### UX
+- [ ] **Export** — download conversation as PDF/CSV
+- [ ] **Comparison view** — side-by-side ticker analysis panel
+- [ ] **Ownership chart** — visual bar/pie chart for top holders inline in responses
+- [ ] **Session persistence** — persist chat to backend so history survives browser refresh
 
-1. **Ticker Summaries** (`chunk_type: ticker_summary`):
-   - One chunk per stock ticker
-   - Contains aggregated ownership data
-   - Top holders list with percentages
-   - Local/Foreign ownership totals
+### Infrastructure
+- [ ] **Rate limiting** — protect the API from abuse
+- [ ] **Response caching** — cache repeated identical queries to reduce LLM cost
+- [ ] **Observability** — structured logging, latency metrics per endpoint
+- [ ] **CI/CD** — GitHub Actions for lint + test on push
 
-2. **Holder-Focused Chunks** (`chunk_type: holder_focus`):
-   - One chunk per significant holder (>1%)
-   - Enables investor-specific queries
-   - Links holder to ticker + date
-
-3. **PDF Page Chunks** (`chunk_type: pdf_page`):
-   - Text extracted from PDF pages
-   - Chunked with 800 char size + 100 overlap
-   - Preserves page numbers for citations
-
-## Metadata Filtering
-
-You can filter queries by:
-- **ticker**: Stock symbol (e.g., "BBCA", "BBRI")
-- **date**: Report date (e.g., "2026-03-31")
-- **source**: "ksei_json" or "ksei_pdf"
-- **chunk_type**: "ticker_summary", "holder_focus", "pdf_page"
-
-Example with filter:
-```python
-from rag import ask_with_metadata_filter
-
-result = ask_with_metadata_filter(
-    question="Siapa pemegang saham terbesar?",
-    ticker="BBCA"
-)
-```
+---
 
 ## Troubleshooting
 
-### Ollama Connection Error
+**Ollama not running**
 ```
 Error: Cannot connect to Ollama at http://localhost:11434
+Fix: ollama serve
 ```
-**Fix**: Start Ollama: `ollama serve`
 
-### Model Not Found
+**Empty search results**
 ```
-Error: qwen2.5:7b not found
-```
-**Fix**: Pull the model: `ollama pull qwen2.5:7b`
-
-### Empty Results
-**Check**: Verify data is ingested:
-```bash
 curl http://localhost:8000/stats
+# If document_count is 0, run ingest_json.py / ingest_pdf.py first
 ```
 
-### Out of Memory (Ollama only)
-**Fix**: Use a smaller model:
-```bash
-ollama pull qwen2.5:1.8b  # Smaller, faster
+**Jatevo auth failure**
+```
+Error: Authentication failed
+Fix: Check JATEVO_API_KEY in .env, restart API after editing
 ```
 
-### Jatevo Authentication Error
+**Frontend 404 on /api routes**
 ```
-Error: Authentication failed. Check your JATEVO_API_KEY.
+Dev mode: Vite proxies /api → localhost:8000 (see vite.config.ts)
+Production: FastAPI serves both API and static files from port 8000
 ```
-**Fix**: 
-1. Verify your API key in `.env` file
-2. Ensure `LLM_PROVIDER=jatevo` is set
-3. Restart the API after changing `.env`
 
-### Jatevo API Connection Error
-```
-Error: Cannot connect to Jatevo API
-```
-**Fix**: Check your internet connection and Jatevo service status.
-
-## Configuration Reference
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LLM_PROVIDER` | LLM provider: `ollama` or `jatevo` | `jatevo` |
-| `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Ollama model name | `qwen2.5:7b` |
-| `JATEVO_BASE_URL` | Jatevo API endpoint | `https://jatevo.id/api/open/v1/inference` |
-| `JATEVO_API_KEY` | Your Jatevo API key | (required for Jatevo) |
-| `JATEVO_MODEL` | Jatevo model name | `qwen3.5-plus` |
-
-## Performance Notes
-
-- **Embedding**: First run downloads `all-MiniLM-L6-v2` (~80MB)
-- **Ingestion**: ~5-10 minutes for 2 months of data
-- **Query**: 2-5 seconds per question (depending on model)
-- **Storage**: ~500MB per month of data (including embeddings)
+---
 
 ## License
 
-MIT License - See LICENSE file for details.
-
-## Acknowledgments
-
-- KSEI for providing ownership data
-- Stockbit for market data
-- Ollama for local LLM hosting
-- ChromaDB for vector storage
+MIT

@@ -21,7 +21,7 @@ export function ChatPage() {
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-[var(--border)] p-4 bg-[var(--bg-surface)]">
+      <div className="border-t border-[var(--border)] px-4 py-2.5 bg-[var(--bg-surface)]">
         <ChatInput />
       </div>
     </div>

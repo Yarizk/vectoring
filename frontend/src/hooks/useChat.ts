@@ -47,6 +47,7 @@ export function useChat() {
           latency,
           mode: response.mode,
           quality: response.quality,
+          enrichment: response.enrichment,
         };
 
         addMessage(aiMessage);

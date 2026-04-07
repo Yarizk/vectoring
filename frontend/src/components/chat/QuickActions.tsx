@@ -1,8 +1,8 @@
 import { TrendingDown, Building2, Users, PieChart } from 'lucide-react';
-import { useChatStore, useUIStore } from '@/stores';
+import { useUIStore } from '@/stores';
+import { useChat } from '@/hooks/useChat';
 import { QUICK_ACTIONS } from '@/lib/constants';
-import { cn, generateId } from '@/lib/utils';
-import type { Message } from '@/types';
+import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 
 const iconMap: Record<string, LucideIcon> = {
@@ -18,33 +18,23 @@ interface QuickActionsProps {
 }
 
 export function QuickActions({ variant = 'sidebar', className }: QuickActionsProps) {
-  const { addMessage, setLoading } = useChatStore();
+  const { sendMessage } = useChat();
   const { setActivePage } = useUIStore();
 
   const handleAction = (prompt: string) => {
-    const userMessage: Message = {
-      id: generateId(),
-      role: 'user',
-      content: prompt,
-      timestamp: new Date(),
-    };
-    addMessage(userMessage);
-    setLoading(true);
     setActivePage('chat');
-    
-    // TODO: Call API
-    setTimeout(() => setLoading(false), 1000);
+    sendMessage(prompt);
   };
 
   if (variant === 'inline') {
     return (
-      <div className={cn('flex flex-wrap gap-2', className)}>
+      <div className={cn('flex flex-wrap gap-1.5', className)}>
         {QUICK_ACTIONS.map((action) => (
           <button
             key={action.id}
             onClick={() => handleAction(action.prompt)}
             className={cn(
-              'px-3 py-2 rounded-lg text-sm',
+              'px-2.5 py-1 rounded text-xs',
               'bg-[var(--bg-elevated)] text-[var(--text-secondary)]',
               'border border-[var(--border)]',
               'hover:border-[var(--accent)] hover:text-[var(--text-primary)]',
@@ -59,7 +49,7 @@ export function QuickActions({ variant = 'sidebar', className }: QuickActionsPro
   }
 
   return (
-    <div className={cn('space-y-1', className)}>
+    <div className={cn('space-y-0.5', className)}>
       {QUICK_ACTIONS.map((action) => {
         const Icon = iconMap[action.icon] || PieChart;
         return (
@@ -67,13 +57,13 @@ export function QuickActions({ variant = 'sidebar', className }: QuickActionsPro
             key={action.id}
             onClick={() => handleAction(action.prompt)}
             className={cn(
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm',
+              'w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs',
               'text-[var(--text-secondary)]',
               'hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]',
               'transition-colors'
             )}
           >
-            <Icon size={16} className="text-[var(--text-muted)]" />
+            <Icon size={13} className="text-[var(--text-muted)]" />
             <span>{action.label}</span>
           </button>
         );
@@ -83,24 +73,16 @@ export function QuickActions({ variant = 'sidebar', className }: QuickActionsPro
 }
 
 export function QuickActionsGrid({ className }: { className?: string }) {
-  const { addMessage, setLoading } = useChatStore();
+  const { sendMessage } = useChat();
   const { setActivePage } = useUIStore();
 
   const handleAction = (prompt: string) => {
-    const userMessage: Message = {
-      id: generateId(),
-      role: 'user',
-      content: prompt,
-      timestamp: new Date(),
-    };
-    addMessage(userMessage);
-    setLoading(true);
     setActivePage('chat');
-    setTimeout(() => setLoading(false), 1000);
+    sendMessage(prompt);
   };
 
   return (
-    <div className={cn('grid grid-cols-2 gap-3', className)}>
+    <div className={cn('grid grid-cols-2 gap-2', className)}>
       {QUICK_ACTIONS.map((action) => {
         const Icon = iconMap[action.icon] || PieChart;
         return (
@@ -108,14 +90,14 @@ export function QuickActionsGrid({ className }: { className?: string }) {
             key={action.id}
             onClick={() => handleAction(action.prompt)}
             className={cn(
-              'flex flex-col items-start gap-2 p-4 rounded-xl',
+              'flex flex-col items-start gap-1.5 p-2.5 rounded-lg',
               'bg-[var(--bg-elevated)] border border-[var(--border)]',
               'hover:border-[var(--accent)] hover:bg-[var(--bg-surface-hover)]',
               'transition-all group'
             )}
           >
-            <Icon size={20} className="text-[var(--accent)]" />
-            <span className="text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent)]">
+            <Icon size={15} className="text-[var(--accent)]" />
+            <span className="text-xs font-medium text-[var(--text-primary)] group-hover:text-[var(--accent)]">
               {action.label}
             </span>
           </button>

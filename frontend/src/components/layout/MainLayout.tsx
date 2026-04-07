@@ -20,7 +20,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         <aside
           className={cn(
             'flex-shrink-0 border-r border-[var(--border)] bg-[var(--bg-surface)] transition-all duration-300',
-            leftPanelOpen ? 'w-[260px]' : 'w-0 overflow-hidden'
+            leftPanelOpen ? 'w-[220px]' : 'w-0 overflow-hidden'
           )}
         >
           <LeftSidebar />
@@ -35,7 +35,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         <aside
           className={cn(
             'flex-shrink-0 border-l border-[var(--border)] bg-[var(--bg-surface)] transition-all duration-300',
-            rightPanelOpen ? 'w-[380px]' : 'w-0 overflow-hidden'
+            rightPanelOpen ? 'w-[300px]' : 'w-0 overflow-hidden'
           )}
         >
           <RightPanel />

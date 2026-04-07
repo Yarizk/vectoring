@@ -3,7 +3,7 @@ import { Bot, FileText, Database, Clock, ChevronDown, ChevronUp, AlertTriangle, 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChatStore, useUIStore } from '@/stores';
-import { cn, formatDate } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import type { Message, Source } from '@/types';
 import { MarketContext } from './MarketContext';
 
@@ -12,7 +12,7 @@ interface AIMessageProps {
 }
 
 export function AIMessage({ message }: AIMessageProps) {
-  const { setSelectedSources, setSelectedTicker } = useChatStore();
+  const { setSelectedSources } = useChatStore();
   const { setRightPanelOpen } = useUIStore();
   const [showSources, setShowSources] = useState(true);
   const [showQuality, setShowQuality] = useState(false);
@@ -31,23 +31,23 @@ export function AIMessage({ message }: AIMessageProps) {
   const hasBeyondData = message.content?.includes('[BEYOND_DATA]');
 
   return (
-    <div className="px-4 py-6 bg-[var(--bg-surface)] border-b border-[var(--border)]">
-      <div className="flex gap-4 max-w-4xl mx-auto">
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--accent)] 
+    <div className="px-4 py-3 bg-[var(--bg-surface)] border-b border-[var(--border)]">
+      <div className="flex gap-3 max-w-4xl mx-auto">
+        <div className="flex-shrink-0 w-6 h-6 rounded bg-[var(--accent)]
                         flex items-center justify-center">
-          <Bot size={16} className="text-white" />
+          <Bot size={13} className="text-white" />
         </div>
-        
+
         <div className="flex-1 min-w-0">
           {/* Header */}
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-medium text-[var(--text-primary)]">KSEI Intelligence</span>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs font-medium text-[var(--text-primary)]">KSEI Intelligence</span>
             <span className="text-xs text-[var(--text-muted)]">
               {formatDate(message.timestamp)}
             </span>
             {message.latency && (
-              <span className="text-xs text-[var(--text-muted)] flex items-center gap-1">
-                <Clock size={12} />
+              <span className="text-xs text-[var(--text-muted)] flex items-center gap-0.5">
+                <Clock size={11} />
                 {message.latency.toFixed(1)}s
               </span>
             )}
@@ -56,45 +56,39 @@ export function AIMessage({ message }: AIMessageProps) {
                 {message.mode}
               </span>
             )}
+            {/* Confidence indicators inline */}
+            {hasCertainMarkers && (
+              <span className="flex items-center gap-0.5 text-xs text-green-400">
+                <CheckCircle size={11} /> Factual
+              </span>
+            )}
+            {hasInferredMarkers && (
+              <span className="flex items-center gap-0.5 text-xs text-blue-400">
+                <HelpCircle size={11} /> Inferred
+              </span>
+            )}
+            {hasUncertainMarkers && (
+              <span className="flex items-center gap-0.5 text-xs text-yellow-400">
+                <AlertTriangle size={11} /> Uncertain
+              </span>
+            )}
+            {hasBeyondData && (
+              <span className="flex items-center gap-0.5 text-xs text-purple-400">
+                <HelpCircle size={11} /> Beyond
+              </span>
+            )}
           </div>
-          
-          {/* Confidence Indicators */}
-          {(hasCertainMarkers || hasInferredMarkers || hasUncertainMarkers || hasBeyondData) && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {hasCertainMarkers && (
-                <span className="flex items-center gap-1 text-xs text-green-400">
-                  <CheckCircle size={12} /> Factual Data
-                </span>
-              )}
-              {hasInferredMarkers && (
-                <span className="flex items-center gap-1 text-xs text-blue-400">
-                  <HelpCircle size={12} /> Inferred
-                </span>
-              )}
-              {hasUncertainMarkers && (
-                <span className="flex items-center gap-1 text-xs text-yellow-400">
-                  <AlertTriangle size={12} /> Uncertain
-                </span>
-              )}
-              {hasBeyondData && (
-                <span className="flex items-center gap-1 text-xs text-purple-400">
-                  <HelpCircle size={12} /> Beyond Data
-                </span>
-              )}
-            </div>
-          )}
-          
+
           {/* Market Context Cards */}
           {message.enrichment && Object.keys(message.enrichment).length > 0 && (
             <MarketContext enrichment={message.enrichment} />
           )}
 
           {/* Markdown Content */}
-          <div className="prose prose-invert max-w-none text-[var(--text-primary)] leading-relaxed">
-            <ReactMarkdown 
+          <div className="prose prose-invert max-w-none text-sm text-[var(--text-primary)] leading-relaxed markdown-content">
+            <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                // Custom renderers for confidence markers
                 strong: ({ children }) => {
                   const text = String(children);
                   if (text === '[CERTAIN]') return <span className="text-green-400 font-semibold text-xs">[CERTAIN]</span>;
@@ -109,87 +103,65 @@ export function AIMessage({ message }: AIMessageProps) {
               {message.content}
             </ReactMarkdown>
           </div>
-          
-          {/* Data Quality Section */}
-          {message.quality && (
-            <div className="mt-4 pt-4 border-t border-[var(--border)]">
-              <button
-                onClick={() => setShowQuality(!showQuality)}
-                className="flex items-center gap-2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              >
-                {showQuality ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                Data Quality: {message.quality.quality_score}% ({message.quality.coverage})
-              </button>
-              
-              {showQuality && (
-                <div className="mt-2 p-3 rounded-lg bg-[var(--bg-elevated)] text-sm">
-                  {message.quality.gaps.length > 0 && (
-                    <div className="mb-2">
-                      <span className="text-[var(--text-muted)]">Gaps:</span>
-                      <ul className="mt-1 space-y-1">
-                        {message.quality.gaps.map((gap, i) => (
-                          <li key={i} className="text-yellow-400">• {gap}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {message.quality.recommendations.length > 0 && (
-                    <div>
-                      <span className="text-[var(--text-muted)]">Suggestions:</span>
-                      <ul className="mt-1 space-y-1">
-                        {message.quality.recommendations.map((rec, i) => (
-                          <li key={i} className="text-[var(--text-secondary)]">• {rec}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-          
-          {/* Source Badges */}
-          {message.sources && message.sources.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-[var(--border)]">
-              <div className="flex items-center gap-3">
+
+          {/* Data Quality + Sources footer */}
+          <div className="mt-2 pt-2 border-t border-[var(--border)] flex items-center gap-3 flex-wrap">
+            {message.quality && (
+              <>
+                <button
+                  onClick={() => setShowQuality(!showQuality)}
+                  className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  {showQuality ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  Quality: {message.quality.quality_score}% · {message.quality.coverage}
+                </button>
+              </>
+            )}
+
+            {message.sources && message.sources.length > 0 && (
+              <>
                 <button
                   onClick={handleSourceClick}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-xs
                              bg-[var(--bg-elevated)] text-[var(--text-secondary)]
                              hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]
                              transition-colors"
                 >
-                  <FileText size={14} />
+                  <FileText size={12} />
                   {message.sources.length} sources
                 </button>
-                
+
                 <button
                   onClick={() => setShowSources(!showSources)}
-                  className="flex items-center gap-1 text-xs text-[var(--text-muted)]
+                  className="flex items-center gap-0.5 text-xs text-[var(--text-muted)]
                              hover:text-[var(--text-primary)] transition-colors"
                 >
-                  {showSources ? (
-                    <>
-                      <ChevronUp size={14} /> Hide
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown size={14} /> Show
-                    </>
-                  )}
+                  {showSources ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  {showSources ? 'Hide' : 'Show'}
                 </button>
-              </div>
-              
-              {showSources && (
-                <div className="mt-3 grid gap-2">
-                  {message.sources.slice(0, 3).map((source, idx) => (
-                    <SourceRow key={source.id} source={source} index={idx + 1} />
-                  ))}
-                  {message.sources.length > 3 && (
-                    <div className="text-xs text-[var(--text-muted)] pl-8">
-                      +{message.sources.length - 3} more sources
-                    </div>
-                  )}
+              </>
+            )}
+          </div>
+
+          {showQuality && message.quality && (
+            <div className="mt-1.5 p-2 rounded bg-[var(--bg-elevated)] text-xs space-y-1">
+              {message.quality.gaps.map((gap, i) => (
+                <div key={i} className="text-yellow-400">· {gap}</div>
+              ))}
+              {message.quality.recommendations.map((rec, i) => (
+                <div key={i} className="text-[var(--text-secondary)]">· {rec}</div>
+              ))}
+            </div>
+          )}
+
+          {showSources && message.sources && message.sources.length > 0 && (
+            <div className="mt-1.5 grid gap-1.5">
+              {message.sources.slice(0, 3).map((source, idx) => (
+                <SourceRow key={source.id} source={source} index={idx + 1} />
+              ))}
+              {message.sources.length > 3 && (
+                <div className="text-xs text-[var(--text-muted)]">
+                  +{message.sources.length - 3} more
                 </div>
               )}
             </div>
@@ -200,40 +172,40 @@ export function AIMessage({ message }: AIMessageProps) {
   );
 }
 
-function SourceRow({ source, index }: { source: Source; index: number }) {
+function SourceRow({ source }: { source: Source; index: number }) {
   const getIcon = () => {
     switch (source.source) {
       case 'ksei_pdf':
-        return <FileText size={14} className="text-[var(--accent-gold)]" />;
+        return <FileText size={12} className="text-[var(--accent-gold)]" />;
       case 'ksei_json':
-        return <Database size={14} className="text-[var(--accent-green)]" />;
+        return <Database size={12} className="text-[var(--accent-green)]" />;
       default:
-        return <Database size={14} className="text-[var(--text-muted)]" />;
+        return <Database size={12} className="text-[var(--text-muted)]" />;
     }
   };
 
   const getLabel = () => {
     if (source.source === 'ksei_pdf') {
-      return `${source.filename}, Page ${source.page_number}`;
+      return `${source.filename}, p.${source.page_number}`;
     }
     if (source.source === 'ksei_json') {
-      return `${source.ticker} - ${source.date}`;
+      return `${source.ticker} · ${source.date}`;
     }
     return 'Unknown source';
   };
 
   return (
-    <div className="flex items-start gap-2 text-sm">
-      <div className="mt-0.5">{getIcon()}</div>
+    <div className="flex items-start gap-1.5 text-xs">
+      <div className="mt-0.5 flex-shrink-0">{getIcon()}</div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[var(--text-secondary)]">{getLabel()}</span>
-          <span className="text-xs text-[var(--accent)]">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[var(--text-secondary)] truncate">{getLabel()}</span>
+          <span className="text-[var(--accent)] flex-shrink-0">
             {Math.round((1 - source.distance) * 100)}%
           </span>
         </div>
-        <p className="text-xs text-[var(--text-muted)] truncate">
-          {source.text_preview?.slice(0, 100)}...
+        <p className="text-[var(--text-muted)] truncate">
+          {source.text_preview?.slice(0, 90)}
         </p>
       </div>
     </div>

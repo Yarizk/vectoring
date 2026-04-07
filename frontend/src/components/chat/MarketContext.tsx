@@ -33,23 +33,23 @@ function TickerCard({ ticker, data }: { ticker: string; data: TickerEnrichment }
   if (!hasData) return null;
 
   return (
-    <div className="p-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)]">
-      <div className="flex items-center gap-2 mb-2">
-        <BarChart3 size={14} className="text-[var(--accent)]" />
-        <span className="text-sm font-semibold text-[var(--text-primary)]">{ticker}</span>
-        <span className="text-xs text-[var(--text-muted)]">Live Data</span>
+    <div className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border)]">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <BarChart3 size={12} className="text-[var(--accent)]" />
+        <span className="text-xs font-semibold text-[var(--text-primary)]">{ticker}</span>
+        <span className="text-xs text-[var(--text-muted)] ml-auto">live</span>
       </div>
 
       {/* Foreign Flow */}
       {flow && (
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-1.5 mb-1.5">
           {flow.foreign_net > 0 ? (
-            <TrendingUp size={14} className="text-green-400" />
+            <TrendingUp size={12} className="text-green-400 flex-shrink-0" />
           ) : (
-            <TrendingDown size={14} className="text-red-400" />
+            <TrendingDown size={12} className="text-red-400 flex-shrink-0" />
           )}
-          <span className="text-sm text-[var(--text-secondary)]">
-            Foreign {flow.foreign_net > 0 ? 'Net Buy' : 'Net Sell'}:{' '}
+          <span className="text-xs text-[var(--text-secondary)]">
+            {flow.foreign_net > 0 ? 'Net Buy' : 'Net Sell'}:{' '}
             <span className={flow.foreign_net > 0 ? 'text-green-400' : 'text-red-400'}>
               {formatIDR(Math.abs(flow.foreign_net))}
             </span>
@@ -59,7 +59,7 @@ function TickerCard({ ticker, data }: { ticker: string; data: TickerEnrichment }
 
       {/* Price Performance */}
       {perf && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
+        <div className="flex flex-wrap gap-1 mb-1">
           <PerfBadge label="1W" value={perf.performance_1w} />
           <PerfBadge label="1M" value={perf.performance_1m} />
           <PerfBadge label="3M" value={perf.performance_3m} />
@@ -70,15 +70,13 @@ function TickerCard({ ticker, data }: { ticker: string; data: TickerEnrichment }
 
       {/* Corporate Actions */}
       {actions && actions.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-[var(--border)]">
-          {actions.map((action, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-xs text-[var(--text-muted)]">
-              <Calendar size={12} className="mt-0.5 text-[var(--accent-gold)]" />
-              <span>
+        <div className="mt-1 pt-1 border-t border-[var(--border)]">
+          {actions.slice(0, 2).map((action, i) => (
+            <div key={i} className="flex items-start gap-1 text-xs text-[var(--text-muted)]">
+              <Calendar size={11} className="mt-0.5 flex-shrink-0 text-[var(--accent-gold)]" />
+              <span className="truncate">
                 {action.description}
-                {action.ex_date && (
-                  <span className="text-[var(--text-muted)]"> (ex: {action.ex_date})</span>
-                )}
+                {action.ex_date && <span> · ex {action.ex_date}</span>}
               </span>
             </div>
           ))}
@@ -92,7 +90,6 @@ export function MarketContext({ enrichment }: MarketContextProps) {
   const tickers = Object.keys(enrichment);
   if (tickers.length === 0) return null;
 
-  // Check if any ticker has actual data
   const hasAnyData = tickers.some((t) => {
     const d = enrichment[t];
     return d.foreign_flow || d.price_performance || (d.corp_actions && d.corp_actions.length > 0);
@@ -101,12 +98,12 @@ export function MarketContext({ enrichment }: MarketContextProps) {
   if (!hasAnyData) return null;
 
   return (
-    <div className="mt-4 space-y-2">
-      <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-        <DollarSign size={12} />
-        <span>Market Context</span>
+    <div className="mb-2 space-y-1.5">
+      <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+        <DollarSign size={11} />
+        <span className="uppercase tracking-wider font-medium">Market Context</span>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-1.5 sm:grid-cols-2">
         {tickers.map((ticker) => (
           <TickerCard key={ticker} ticker={ticker} data={enrichment[ticker]} />
         ))}

@@ -68,24 +68,24 @@ export function ModeSelector({ value, onChange, className }: ModeSelectorProps) 
   }
 
   return (
-    <div className={cn('flex flex-wrap gap-2', className)}>
+    <div className={cn('flex flex-wrap gap-1', className)}>
       {Object.entries(modes).map(([modeKey, modeConfig]) => {
         const Icon = modeIcons[modeKey] || Scale;
         const isActive = value === modeKey;
-        
+
         return (
           <button
             key={modeKey}
             onClick={() => onChange(modeKey)}
             className={cn(
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+              'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all',
               isActive
                 ? `bg-[var(--bg-elevated)] border border-[var(--border)] ${modeColors[modeKey]}`
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]'
             )}
             title={modeConfig.description}
           >
-            <Icon size={14} />
+            <Icon size={12} />
             <span className="capitalize">{modeKey}</span>
           </button>
         );
@@ -118,14 +118,10 @@ export function QualityBadge({ quality, className }: QualityBadgeProps) {
   }
   
   return (
-    <div className={cn('flex items-center gap-2 text-xs', className)}>
-      <span className="text-[var(--text-muted)]">Data Quality:</span>
-      <span className={cn('font-medium', color)}>
-        {label} ({score}%)
-      </span>
-      <span className="text-[var(--text-muted)]">
-        Coverage: <span className="capitalize">{quality.coverage}</span>
-      </span>
+    <div className={cn('flex items-center gap-1.5 text-xs', className)}>
+      <span className="text-[var(--text-muted)]">Quality:</span>
+      <span className={cn('font-medium', color)}>{label} {score}%</span>
+      <span className="text-[var(--text-muted)] capitalize">{quality.coverage}</span>
     </div>
   );
 }
