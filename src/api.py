@@ -13,11 +13,11 @@ import uvicorn
 import os
 
 from embedder import get_stats, delete_collection
-from rag import ask, ask_with_metadata_filter, check_ollama, check_jatevo, list_available_models
-from rag_enhanced import ask_enhanced, RESPONSE_MODES, analyze_data_quality, generate_enhanced_prompt
+from rag import check_ollama, check_jatevo, list_available_models
+from rag_enhanced import ask_enhanced, RESPONSE_MODES, check_deepseek
 from ingest_json import ingest_all_json_files
 from ingest_pdf import ingest_all_pdfs
-from config import LLM_PROVIDER, JATEVO_BASE_URL, JATEVO_MODEL, validate_config
+from config import LLM_PROVIDER, JATEVO_MODEL, DEEPSEEK_MODEL, validate_config
 from stockbit_enricher import enrich_tickers
 
 # Get the project root directory
@@ -110,19 +110,23 @@ def root():
 def health():
     """Health check endpoint."""
     errors = validate_config()
-    
+
     if LLM_PROVIDER == "jatevo":
         provider_ok = check_jatevo()
-        status = "healthy" if not errors else "degraded"
+    elif LLM_PROVIDER == "deepseek":
+        result = check_deepseek()
+        provider_ok = result["available"]
+        if not result["available"] and result.get("error"):
+            errors = errors + [result["error"]]
     else:
         provider_ok = check_ollama()
-        status = "healthy" if provider_ok else "degraded"
-    
+
+    status = "healthy" if provider_ok and not errors else "degraded"
     return {
         "status": status,
         "provider": LLM_PROVIDER,
         "provider_connected": provider_ok,
-        "config_errors": errors
+        "config_errors": errors,
     }
 
 
@@ -131,17 +135,19 @@ def stats():
     """Get database and system statistics."""
     db_stats = get_stats()
     errors = validate_config()
-    
+
     ollama_ok = check_ollama() if LLM_PROVIDER == "ollama" else False
     jatevo_ok = check_jatevo() if LLM_PROVIDER == "jatevo" else False
-    
-    # Get available models based on provider
+    deepseek_ok = check_deepseek()["available"] if LLM_PROVIDER == "deepseek" else False
+
     models = []
     if LLM_PROVIDER == "ollama" and ollama_ok:
         models = list_available_models()
     elif LLM_PROVIDER == "jatevo":
         models = [JATEVO_MODEL]
-    
+    elif LLM_PROVIDER == "deepseek":
+        models = [DEEPSEEK_MODEL]
+
     return StatsResponse(
         collection_name=db_stats["collection_name"],
         document_count=db_stats["document_count"],
@@ -149,10 +155,10 @@ def stats():
         chroma_db_path=db_stats["chroma_db_path"],
         llm_provider=LLM_PROVIDER,
         ollama_status=ollama_ok,
-        jatevo_status=jatevo_ok,
-        jatevo_model=JATEVO_MODEL,
+        jatevo_status=jatevo_ok or deepseek_ok,
+        jatevo_model=DEEPSEEK_MODEL if LLM_PROVIDER == "deepseek" else JATEVO_MODEL,
         available_models=models,
-        config_errors=errors
+        config_errors=errors,
     )
 
 
@@ -306,10 +312,7 @@ async def serve_frontend():
 
 @app.get("/api/ticker/{symbol}")
 def get_ticker_enrichment(symbol: str):
-    """
-    Get live Stockbit enrichment data for a single ticker.
-    Returns foreign flow, price performance, and recent corporate actions.
-    """
+    """Get live Stockbit enrichment data for a single ticker."""
     symbol = symbol.upper()
     enrichment = enrich_tickers([symbol])
     data = enrichment.get(symbol, {})
@@ -318,6 +321,202 @@ def get_ticker_enrichment(symbol: str):
         "enrichment": data,
         "available": bool(data and any(v for v in data.values())),
     }
+
+
+@app.get("/api/chart/{symbol}/ohlcv")
+def get_ohlcv_chart(symbol: str, days: int = 90):
+    """Return OHLCV data for candlestick chart from market DuckDB."""
+    symbol = symbol.upper()
+    try:
+        import duckdb
+        from config import MARKET_DB_PATH
+        from datetime import date, timedelta
+        if not os.path.exists(MARKET_DB_PATH):
+            return {"ticker": symbol, "data": [], "error": "market.duckdb not found — run market ingestion first"}
+        since = (date.today() - timedelta(days=days)).isoformat()
+        conn = duckdb.connect(MARKET_DB_PATH, read_only=True)
+        rows = conn.execute("""
+            SELECT date, open, high, low, close, volume, net_foreign
+            FROM ohlcv_daily
+            WHERE symbol = ? AND date >= ?
+            ORDER BY date ASC
+        """, [symbol, since]).fetchall()
+        conn.close()
+        data = [
+            {
+                "time": str(r[0]),
+                "open": r[1], "high": r[2], "low": r[3], "close": r[4],
+                "volume": r[5], "net_foreign": r[6],
+            }
+            for r in rows
+        ]
+        return {"ticker": symbol, "days": days, "data": data, "count": len(data)}
+    except Exception as e:
+        return {"ticker": symbol, "data": [], "error": str(e)}
+
+
+@app.get("/api/chart/{symbol}/fundamentals")
+def get_fundamentals_chart(symbol: str):
+    """Return fundamental ratios + financials + analyst data for charts."""
+    symbol = symbol.upper()
+    try:
+        import duckdb
+        from config import MARKET_DB_PATH
+        if not os.path.exists(MARKET_DB_PATH):
+            return {"ticker": symbol, "data": {}, "error": "market.duckdb not found — run market ingestion first"}
+        conn = duckdb.connect(MARKET_DB_PATH, read_only=True)
+
+        # Latest ratios row
+        ratios_row = conn.execute("""
+            SELECT pe_ttm, pe_forward, pe_annualised, pb, ps_ttm, ev_ebitda,
+                   roe, roa, roic, gross_margin, operating_margin,
+                   debt_equity, current_ratio, interest_coverage,
+                   dividend_yield, payout_ratio, earnings_yield
+            FROM fundamentals_ratio
+            WHERE symbol = ?
+            ORDER BY date DESC LIMIT 1
+        """, [symbol]).fetchone()
+        ratio_cols = [
+            "pe_ttm", "pe_forward", "pe_annualised", "pb", "ps_ttm", "ev_ebitda",
+            "roe", "roa", "roic", "gross_margin", "operating_margin",
+            "debt_equity", "current_ratio", "interest_coverage",
+            "dividend_yield", "payout_ratio", "earnings_yield",
+        ]
+        ratios = dict(zip(ratio_cols, ratios_row)) if ratios_row else {}
+
+        # Quarterly financials (last 4 quarters)
+        fin_rows = conn.execute("""
+            SELECT period_end, line_item, value
+            FROM financials_quarterly
+            WHERE symbol = ?
+            ORDER BY period_end DESC
+            LIMIT 40
+        """, [symbol]).fetchall()
+        from collections import defaultdict
+        fin_by_period: dict = defaultdict(dict)
+        for period_end, line_item, value in fin_rows:
+            fin_by_period[str(period_end)][line_item] = value
+        financials = dict(sorted(fin_by_period.items(), reverse=True)[:4])
+
+        # Analyst consensus
+        analyst_row = conn.execute("""
+            SELECT consensus_rating, target_median, target_high, target_low,
+                   estimate_revision_30d_up, estimate_revision_30d_down
+            FROM analyst_consensus
+            WHERE symbol = ?
+            ORDER BY date DESC LIMIT 1
+        """, [symbol]).fetchone()
+        analyst = {}
+        if analyst_row:
+            analyst = {
+                "consensus_rating": analyst_row[0],
+                "target_median": analyst_row[1],
+                "target_high": analyst_row[2],
+                "target_low": analyst_row[3],
+                "estimate_revision_30d_up": analyst_row[4],
+                "estimate_revision_30d_down": analyst_row[5],
+            }
+
+        # Individual analyst ratings
+        rating_rows = conn.execute("""
+            SELECT broker, rating, target_price, analyst_name, as_of_date
+            FROM analyst_ratings
+            WHERE symbol = ?
+            ORDER BY as_of_date DESC
+        """, [symbol]).fetchall()
+        ratings = [
+            {"broker": r[0], "rating": r[1], "target_price": r[2],
+             "analyst_name": r[3], "date": str(r[4])}
+            for r in rating_rows
+        ]
+
+        # Price performance
+        perf_rows = conn.execute("""
+            SELECT period, change_pct FROM price_performance
+            WHERE symbol = ?
+            ORDER BY as_of_date DESC
+        """, [symbol]).fetchall()
+        seen = {}
+        for period, chg in perf_rows:
+            if period not in seen:
+                seen[period] = chg
+        performance = seen
+
+        # Corporate actions (last 5)
+        action_rows = conn.execute("""
+            SELECT action_type, announce_date, ex_date, cash_amount, notes
+            FROM corporate_actions
+            WHERE symbol = ?
+            ORDER BY announce_date DESC LIMIT 5
+        """, [symbol]).fetchall()
+        actions = [
+            {"action_type": r[0], "announce_date": str(r[1]),
+             "ex_date": str(r[2]), "cash_amount": r[3], "notes": r[4]}
+            for r in action_rows
+        ]
+
+        conn.close()
+        data = {
+            "ratios": ratios,
+            "financials": financials,
+            "analyst": analyst,
+            "ratings": ratings,
+            "performance": performance,
+            "actions": actions,
+        }
+        return {"ticker": symbol, "data": data}
+    except Exception as e:
+        return {"ticker": symbol, "data": {}, "error": str(e)}
+
+
+@app.post("/ingest/market", response_model=IngestResponse)
+def ingest_market_endpoint(
+    background_tasks: BackgroundTasks,
+    symbols: Optional[str] = None,
+    days: int = 90,
+    embed_only: bool = False,
+):
+    """
+    Trigger market data ingestion from Stockbit API.
+    symbols: comma-separated tickers (default: LQ45 watchlist)
+    days: days of OHLCV history (default: 90)
+    embed_only: skip scraping, only embed existing DuckDB
+    """
+    global ingestion_status
+
+    if ingestion_status["running"]:
+        return IngestResponse(
+            success=False,
+            message="Ingestion already running",
+            details=None,
+        )
+
+    sym_list = [s.strip().upper() for s in symbols.split(",")] if symbols else None
+
+    def do_market_ingest():
+        ingestion_status["running"] = True
+        try:
+            from market.ingest import DEFAULT_SYMBOLS, _get_token
+            from config import MARKET_DB_PATH
+            syms  = sym_list or DEFAULT_SYMBOLS
+            token = _get_token()
+            if not embed_only:
+                from market.scrapers import run_scrape
+                run_scrape(symbols=syms, db_path=MARKET_DB_PATH, token=token, days=days)
+            from market.embed import embed_all
+            result = embed_all(MARKET_DB_PATH, syms if embed_only else None)
+            ingestion_status["last_result"] = {"market": result}
+        except Exception as e:
+            ingestion_status["last_result"] = {"market": {"error": str(e)}}
+        finally:
+            ingestion_status["running"] = False
+
+    background_tasks.add_task(do_market_ingest)
+    return IngestResponse(
+        success=True,
+        message="Market ingestion started in background. Check /ingest/status for progress.",
+        details={"symbols": sym_list or "default watchlist", "days": days, "embed_only": embed_only},
+    )
 
 
 @app.get("/{full_path:path}")

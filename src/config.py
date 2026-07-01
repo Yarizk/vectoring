@@ -1,6 +1,6 @@
 """
 Configuration management for KSEI RAG.
-Supports both local Ollama and Jatevo API providers.
+Supports Ollama (local), Jatevo, and DeepSeek (OpenAI-compatible) providers.
 """
 
 import os
@@ -21,8 +21,21 @@ JATEVO_BASE_URL = os.getenv("JATEVO_BASE_URL", "https://jatevo.id/api/open/v1/in
 JATEVO_API_KEY = os.getenv("JATEVO_API_KEY", "")
 JATEVO_MODEL = os.getenv("JATEVO_MODEL", "qwen3.5-plus")
 
+# DeepSeek API Configuration (OpenAI-compatible)
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
 # Market Data API Configuration (optional, enables live enrichment)
 STOCKBIT_TOKEN = os.getenv("MARKET_DATA_TOKEN", os.getenv("STOCKBIT_TOKEN", ""))
+
+# Local market database (populated by market/ingest.py from Stockbit API)
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+MARKET_DB_PATH = os.getenv(
+    "MARKET_DB_PATH",
+    os.path.join(_PROJECT_ROOT, "data", "market.duckdb")
+)
 
 # Embedding Configuration
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
@@ -47,22 +60,31 @@ def get_llm_config():
             "base_url": JATEVO_BASE_URL,
             "api_key": JATEVO_API_KEY,
             "model": JATEVO_MODEL,
-        }
+        },
+        "deepseek": {
+            "base_url": DEEPSEEK_BASE_URL,
+            "model": DEEPSEEK_MODEL,
+            "has_key": bool(DEEPSEEK_API_KEY),
+        },
     }
 
 
 def validate_config():
     """Validate configuration based on provider."""
     errors = []
-    
+
     if LLM_PROVIDER == "jatevo":
         if not JATEVO_API_KEY or JATEVO_API_KEY == "your_api_key_here":
             errors.append("JATEVO_API_KEY is required when using Jatevo provider")
-    
+
+    elif LLM_PROVIDER == "deepseek":
+        if not DEEPSEEK_API_KEY:
+            errors.append("DEEPSEEK_API_KEY is required when using DeepSeek provider")
+
     elif LLM_PROVIDER == "ollama":
-        # Ollama doesn't require API key
         pass
+
     else:
-        errors.append(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. Use 'ollama' or 'jatevo'")
-    
+        errors.append(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. Use 'ollama', 'jatevo', or 'deepseek'")
+
     return errors

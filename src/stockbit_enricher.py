@@ -148,6 +148,30 @@ def format_enrichment_for_prompt(enrichment: Dict[str, Dict]) -> str:
                 ex = a.get("ex_date", "")
                 lines.append(f"  - {desc}" + (f" (ex-date: {ex})" if ex else ""))
 
+        # DuckDB OHLCV real-time
+        ohlcv = data.get("ohlcv_realtime")
+        if ohlcv:
+            nf = ohlcv.get("net_foreign", 0) or 0
+            direction = "Net Buy" if nf >= 0 else "Net Sell"
+            lines.append(f"Latest Price (sbitools): Rp {ohlcv.get('close', 'N/A'):,} "
+                         f"| Foreign: {direction} {_fmt_idr(abs(nf))} ({ohlcv.get('date', '')})")
+
+        # Composite scores
+        scores = data.get("composite_scores")
+        if scores:
+            parts = []
+            label_map = {
+                "composite.thesis_score": "Thesis",
+                "composite.momentum_score": "Momentum",
+                "composite.bandar_heat_score": "Bandar Heat",
+                "composite.value_score": "Value",
+            }
+            for k, label in label_map.items():
+                if k in scores:
+                    parts.append(f"{label}: {scores[k]:.0f}/100")
+            if parts:
+                lines.append(f"Scores (sbitools): {', '.join(parts)}")
+
         if len(lines) > 1:  # More than just the header
             sections.append("\n".join(lines))
 
@@ -155,6 +179,53 @@ def format_enrichment_for_prompt(enrichment: Dict[str, Dict]) -> str:
         return ""
 
     return "LIVE MARKET DATA (from Stockbit, real-time):\n\n" + "\n\n".join(sections)
+
+
+def _get_duckdb_realtime(ticker: str) -> Dict[str, Any]:
+    """Pull today's OHLCV + feature scores from sbitools DuckDB if available."""
+    try:
+        import duckdb
+        from datetime import date, timedelta
+        db_path = os.path.join(PROJECT_ROOT, "..", "sbitv2", "sbitools", "data", "sbitools.duckdb")
+        if not os.path.exists(db_path):
+            return {}
+        conn = duckdb.connect(db_path, read_only=True)
+        result = {}
+        since = (date.today() - timedelta(days=5)).isoformat()
+        try:
+            row = conn.execute(
+                "SELECT date, close, volume, net_foreign, foreign_buy, foreign_sell "
+                "FROM ohlcv_daily WHERE symbol=? AND date>=? ORDER BY date DESC LIMIT 1",
+                [ticker, since]
+            ).fetchone()
+            if row:
+                result["ohlcv"] = {
+                    "date": str(row[0]), "close": row[1], "volume": row[2],
+                    "net_foreign": row[3], "foreign_buy": row[4], "foreign_sell": row[5],
+                }
+        except Exception:
+            pass
+        try:
+            rows = conn.execute(
+                "SELECT feature_name, value FROM feature_daily "
+                "WHERE symbol=? AND date>=? AND feature_name IN "
+                "('composite.thesis_score','composite.momentum_score',"
+                "'composite.bandar_heat_score','composite.value_score') "
+                "ORDER BY date DESC",
+                [ticker, since]
+            ).fetchall()
+            seen: Dict[str, float] = {}
+            for fname, fval in rows:
+                if fname not in seen and fval is not None:
+                    seen[fname] = fval
+            if seen:
+                result["scores"] = seen
+        except Exception:
+            pass
+        conn.close()
+        return result
+    except Exception:
+        return {}
 
 
 def enrich_tickers(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -200,6 +271,13 @@ def enrich_tickers(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
             ticker_data["corp_actions"] = format_corp_actions(ticker, actions_raw)
         except Exception:
             pass
+
+        # Augment with DuckDB real-time data (faster, no API call)
+        db_rt = _get_duckdb_realtime(ticker)
+        if db_rt.get("ohlcv"):
+            ticker_data["ohlcv_realtime"] = db_rt["ohlcv"]
+        if db_rt.get("scores"):
+            ticker_data["composite_scores"] = db_rt["scores"]
 
         result[ticker] = ticker_data
 

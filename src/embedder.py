@@ -145,6 +145,28 @@ def embed_and_store(
     return total_stored
 
 
+def upsert_with_ids(
+    texts: List[str],
+    ids: List[str],
+    metas: List[Dict[str, Any]],
+    collection_name: str = "ksei_data",
+    batch_size: int = 100,
+) -> int:
+    """Embed texts and upsert into ChromaDB with explicit IDs."""
+    if not texts:
+        return 0
+    collection = get_or_create_collection(collection_name)
+    total = 0
+    for i in range(0, len(texts), batch_size):
+        t = texts[i:i + batch_size]
+        i_ids = ids[i:i + batch_size]
+        i_metas = metas[i:i + batch_size]
+        embeddings = embed_texts(t)
+        collection.upsert(ids=i_ids, embeddings=embeddings, documents=t, metadatas=i_metas)
+        total += len(t)
+    return total
+
+
 def search(
     query: str,
     n_results: int = 5,
