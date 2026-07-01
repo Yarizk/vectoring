@@ -15,6 +15,7 @@ from stockbit_enricher import enrich_tickers, format_enrichment_for_prompt
 from config import (
     LLM_PROVIDER, OLLAMA_BASE_URL, OLLAMA_MODEL,
     JATEVO_BASE_URL, JATEVO_API_KEY, JATEVO_MODEL,
+    DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL,
     validate_config
 )
 
@@ -52,22 +53,30 @@ def generate_context_block(contexts: List[Dict[str, Any]]) -> str:
     """Generate formatted context block."""
     context_texts = []
     for i, ctx in enumerate(contexts, 1):
-        source = ctx['metadata'].get('source', 'unknown')
-        
-        if source == 'ksei_json':
-            ticker = ctx['metadata'].get('ticker', 'N/A')
-            date = ctx['metadata'].get('date', 'N/A')
-            chunk_type = ctx['metadata'].get('chunk_type', 'unknown')
+        meta = ctx['metadata']
+        source = meta.get('source', '')
+        chunk_type = meta.get('chunk_type', '')
+
+        if source == 'ksei_json' or chunk_type in ('ticker_summary', 'holder_focus'):
+            ticker = meta.get('ticker', 'N/A')
+            date = meta.get('date', 'N/A')
             source_info = f"[Source: KSEI JSON - Ticker: {ticker}, Date: {date}, Type: {chunk_type}]"
-        elif source == 'ksei_pdf':
-            filename = ctx['metadata'].get('filename', 'N/A')
-            page = ctx['metadata'].get('page_number', 'N/A')
+        elif source == 'ksei_pdf' or chunk_type == 'pdf_page':
+            filename = meta.get('filename', 'N/A')
+            page = meta.get('page_number', 'N/A')
             source_info = f"[Source: KSEI PDF - File: {filename}, Page: {page}]"
+        elif chunk_type == 'comparative_sql':
+            source_info = "[Source: Market Ranking — DuckDB aggregation across all tickers]"
+        elif chunk_type.startswith('market_'):
+            ticker = meta.get('ticker', 'N/A')
+            date = meta.get('date', meta.get('latest_period', 'N/A'))
+            label = chunk_type.replace('market_', '').replace('_', ' ').title()
+            source_info = f"[Source: Market Data - Ticker: {ticker}, Type: {label}, Date: {date}]"
         else:
-            source_info = f"[Source: {source}]"
-        
+            source_info = f"[Source: {source or chunk_type or 'unknown'}]"
+
         context_texts.append(f"Context {i} {source_info}:\n{ctx['text']}")
-    
+
     return "\n\n".join(context_texts)
 
 
@@ -139,8 +148,20 @@ def analyze_data_quality(contexts: List[Dict[str, Any]], query: str) -> Dict[str
     relevance_score = max(0, min(100, (1 - avg_distance) * 100))
     
     # Check for different source types
-    has_pdf = any(ctx['metadata'].get('source') == 'ksei_pdf' for ctx in contexts)
-    has_json = any(ctx['metadata'].get('source') == 'ksei_json' for ctx in contexts)
+    has_pdf = any(
+        ctx['metadata'].get('source') == 'ksei_pdf' or ctx['metadata'].get('chunk_type') == 'pdf_page'
+        for ctx in contexts
+    )
+    has_json = any(
+        ctx['metadata'].get('source') == 'ksei_json' or
+        ctx['metadata'].get('chunk_type') in ('ticker_summary', 'holder_focus')
+        for ctx in contexts
+    )
+    has_market = any(
+        ctx['metadata'].get('chunk_type', '').startswith('market_')
+        or ctx['metadata'].get('chunk_type') == 'comparative_sql'
+        for ctx in contexts
+    )
     
     # Extract tickers found
     tickers_found = set()
@@ -185,7 +206,7 @@ def analyze_data_quality(contexts: List[Dict[str, Any]], query: str) -> Dict[str
         "has_data": True,
         "quality_score": round(relevance_score, 1),
         "coverage": coverage,
-        "sources": {"pdf": has_pdf, "json": has_json},
+        "sources": {"pdf": has_pdf, "json": has_json, "market": has_market},
         "tickers_found": list(tickers_found),
         "tickers_requested": list(query_tickers),
         "tickers_matched": list(matched_tickers),
@@ -215,7 +236,7 @@ def generate_enhanced_prompt(
 DATA QUALITY ASSESSMENT:
 - Relevance Score: {quality['quality_score']}/100
 - Coverage: {quality['coverage']}
-- Sources: JSON={'Yes' if quality['sources']['json'] else 'No'}, PDF={'Yes' if quality['sources']['pdf'] else 'No'}
+- Sources: JSON={'Yes' if quality['sources']['json'] else 'No'}, PDF={'Yes' if quality['sources']['pdf'] else 'No'}, Market={'Yes' if quality['sources'].get('market') else 'No'}
 - Tickers Found: {', '.join(quality['tickers_found']) if quality['tickers_found'] else 'None'}
 """
         
@@ -308,6 +329,18 @@ def ask_enhanced(
             "error": f"Ollama is not running at {OLLAMA_BASE_URL}",
             "enrichment": {},
         }
+
+    if LLM_PROVIDER == "deepseek" and not DEEPSEEK_API_KEY:
+        return {
+            "question": question,
+            "answer": None,
+            "sources": [],
+            "quality": None,
+            "success": False,
+            "mode": mode,
+            "error": "DEEPSEEK_API_KEY not set in .env",
+            "enrichment": {},
+        }
     
     # Retrieve contexts
     if use_hybrid_search:
@@ -367,6 +400,8 @@ def ask_enhanced(
     # Call LLM
     if LLM_PROVIDER == "jatevo":
         response = ask_jatevo(prompt, temperature=temperature, max_tokens=4096)
+    elif LLM_PROVIDER == "deepseek":
+        response = ask_deepseek(prompt, temperature=temperature, max_tokens=4096)
     else:
         response = ask_ollama(prompt, temperature=temperature, max_tokens=2048)
     
@@ -394,16 +429,29 @@ def ask_enhanced(
             'relevance': round((1 - min(ctx['distance'], 1)) * 100, 1)
         }
         
-        if meta.get('source') == 'ksei_json':
+        chunk_type = meta.get('chunk_type', '')
+        if meta.get('source') == 'ksei_json' or chunk_type in ('ticker_summary', 'holder_focus'):
             source_info.update({
                 'ticker': meta.get('ticker'),
                 'date': meta.get('date'),
-                'chunk_type': meta.get('chunk_type')
+                'chunk_type': chunk_type,
             })
-        elif meta.get('source') == 'ksei_pdf':
+        elif meta.get('source') == 'ksei_pdf' or chunk_type == 'pdf_page':
             source_info.update({
                 'filename': meta.get('filename'),
-                'page_number': meta.get('page_number')
+                'page_number': meta.get('page_number'),
+            })
+        elif chunk_type == 'comparative_sql':
+            source_info.update({
+                'chunk_type': chunk_type,
+                'source': 'duckdb_ranking',
+            })
+        elif chunk_type.startswith('market_'):
+            source_info.update({
+                'ticker': meta.get('ticker'),
+                'date': meta.get('date', meta.get('latest_period', '')),
+                'chunk_type': chunk_type,
+                'source': 'market',
             })
         
         formatted_sources.append(source_info)
@@ -467,6 +515,54 @@ def ask_jatevo(prompt: str, model: str = JATEVO_MODEL, temperature: float = 0.3,
         return {"success": False, "text": None, "error": str(e)}
 
 
+def ask_deepseek(prompt: str, model: str = DEEPSEEK_MODEL, temperature: float = 0.3, max_tokens: int = 4096) -> Dict[str, Any]:
+    """Send prompt to DeepSeek API (OpenAI-compatible)."""
+    if not DEEPSEEK_API_KEY:
+        return {"success": False, "text": None, "error": "DEEPSEEK_API_KEY not configured"}
+
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        }
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+
+        response = requests.post(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=120,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            choices = data.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "").strip()
+                return {"success": True, "text": content, "error": None, "usage": data.get("usage", {})}
+            return {"success": False, "text": None, "error": "No response content"}
+        elif response.status_code == 401:
+            return {"success": False, "text": None, "error": "DeepSeek authentication failed — check DEEPSEEK_API_KEY"}
+        elif response.status_code == 402:
+            return {"success": False, "text": None, "error": "DeepSeek quota exceeded"}
+        else:
+            return {"success": False, "text": None, "error": f"DeepSeek API error {response.status_code}: {response.text[:200]}"}
+
+    except requests.exceptions.ConnectionError:
+        return {"success": False, "text": None, "error": f"Cannot connect to DeepSeek API at {DEEPSEEK_BASE_URL}"}
+    except requests.exceptions.Timeout:
+        return {"success": False, "text": None, "error": "DeepSeek request timed out"}
+    except Exception as e:
+        return {"success": False, "text": None, "error": str(e)}
+
+
 def ask_ollama(prompt: str, model: str = OLLAMA_MODEL, temperature: float = 0.3, max_tokens: int = 2048) -> Dict[str, Any]:
     """Send prompt to Ollama."""
     try:
@@ -503,3 +599,32 @@ def check_ollama() -> bool:
         return response.status_code == 200
     except:
         return False
+
+
+def check_deepseek() -> Dict[str, Any]:
+    """Test DeepSeek API availability with a minimal request."""
+    if not DEEPSEEK_API_KEY:
+        return {"available": False, "error": "DEEPSEEK_API_KEY not set", "model": DEEPSEEK_MODEL}
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        }
+        payload = {
+            "model": DEEPSEEK_MODEL,
+            "messages": [{"role": "user", "content": "Hi"}],
+            "max_tokens": 5,
+            "stream": False,
+        }
+        response = requests.post(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+        if response.status_code == 200:
+            return {"available": True, "error": None, "model": DEEPSEEK_MODEL, "base_url": DEEPSEEK_BASE_URL}
+        else:
+            return {"available": False, "error": f"HTTP {response.status_code}: {response.text[:100]}", "model": DEEPSEEK_MODEL}
+    except Exception as e:
+        return {"available": False, "error": str(e), "model": DEEPSEEK_MODEL}
