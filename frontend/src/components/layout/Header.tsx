@@ -2,7 +2,6 @@ import { Link, useLocation } from 'react-router-dom';
 import { MessageSquare, Activity, LayoutDashboard, Menu, PanelRight } from 'lucide-react';
 import { useUIStore } from '@/stores';
 import { cn } from '@/lib/utils';
-import { KseiLogo } from '@/components/ui/KseiLogo';
 
 const navItems = [
   { path: '/chat', label: 'Chat', icon: MessageSquare },
@@ -31,7 +30,6 @@ export function Header() {
         </button>
 
         <Link to="/" className="flex items-center gap-1.5">
-          <KseiLogo size={20} />
           <span className="font-semibold text-sm tracking-tight">
             KSEI <span className="text-[var(--accent)]">Intelligence</span>
           </span>

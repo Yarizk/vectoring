@@ -2,13 +2,14 @@ import type { EnrichmentData } from './enrichment';
 
 export interface Source {
   id: string;
-  source: 'ksei_pdf' | 'ksei_json' | 'market_data';
+  source: 'ksei_pdf' | 'ksei_json' | 'market_data' | 'sbitools' | string;
   text_preview: string;
   distance: number;
-  // KSEI JSON specific
+  // Ticker-based sources
   ticker?: string;
   date?: string;
   chunk_type?: string;
+  issuer?: string;
   // KSEI PDF specific
   filename?: string;
   page_number?: number;

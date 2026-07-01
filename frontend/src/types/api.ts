@@ -53,4 +53,3 @@ export interface HealthResponse {
   config_errors: string[];
 }
 
-export { ResponseMode };

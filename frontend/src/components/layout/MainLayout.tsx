@@ -2,6 +2,7 @@ import { Header } from './Header';
 import { LeftSidebar } from './LeftSidebar';
 import { RightPanel } from './RightPanel';
 import { useUIStore } from '@/stores';
+import { useChatStore } from '@/stores';
 import { cn } from '@/lib/utils';
 
 interface MainLayoutProps {
@@ -10,11 +11,15 @@ interface MainLayoutProps {
 
 export function MainLayout({ children }: MainLayoutProps) {
   const { leftPanelOpen, rightPanelOpen } = useUIStore();
+  const { selectedChartTicker } = useChatStore();
+
+  // Widen right panel when showing charts
+  const rightPanelWidth = selectedChartTicker ? 'w-[500px]' : 'w-[300px]';
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] overflow-hidden">
       <Header />
-      
+
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar */}
         <aside
@@ -35,7 +40,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         <aside
           className={cn(
             'flex-shrink-0 border-l border-[var(--border)] bg-[var(--bg-surface)] transition-all duration-300',
-            rightPanelOpen ? 'w-[300px]' : 'w-0 overflow-hidden'
+            rightPanelOpen ? rightPanelWidth : 'w-0 overflow-hidden'
           )}
         >
           <RightPanel />

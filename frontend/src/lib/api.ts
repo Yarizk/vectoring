@@ -1,10 +1,9 @@
 import { API_BASE_URL } from './constants';
-import type { 
-  AskRequest, 
-  AskResponse, 
-  HealthResponse, 
-  PipelineStats,
-  ApiResponse 
+import type {
+  AskRequest,
+  AskResponse,
+  HealthResponse,
+  ResponseMode,
 } from '@/types';
 
 class ApiError extends Error {
@@ -103,6 +102,31 @@ export async function getBatchMarketData(
     })
   );
   return results;
+}
+
+// Chart data
+export interface OhlcvBar {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  value: number;
+  net_foreign: number;
+}
+
+export async function getOhlcvChart(
+  ticker: string,
+  days = 90
+): Promise<{ ticker: string; data: OhlcvBar[]; count: number }> {
+  return fetchApi(`/api/chart/${ticker.toUpperCase()}/ohlcv?days=${days}`);
+}
+
+export async function getFundamentals(
+  ticker: string
+): Promise<{ ticker: string; data: Record<string, any> }> {
+  return fetchApi(`/api/chart/${ticker.toUpperCase()}/fundamentals`);
 }
 
 export { ApiError };

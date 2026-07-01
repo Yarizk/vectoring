@@ -7,14 +7,16 @@ interface ChatState {
   isLoading: boolean;
   selectedSources: Source[];
   selectedTicker: TickerDetail | null;
+  selectedChartTicker: string | null;
   mode: string;
-  
+
   // Actions
   addMessage: (message: Message) => void;
   setLoading: (loading: boolean) => void;
   clearChat: () => void;
   setSelectedSources: (sources: Source[]) => void;
   setSelectedTicker: (ticker: TickerDetail | null) => void;
+  setSelectedChartTicker: (ticker: string | null) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setMode: (mode: string) => void;
 }
@@ -26,30 +28,32 @@ export const useChatStore = create<ChatState>()(
       isLoading: false,
       selectedSources: [],
       selectedTicker: null,
+      selectedChartTicker: null,
       mode: 'balanced',
-      
+
       addMessage: (message) => set((state) => ({
         messages: [...state.messages, message],
       })),
-      
+
       setLoading: (loading) => set({ isLoading: loading }),
-      
-      clearChat: () => set({ 
+
+      clearChat: () => set({
         messages: [],
         selectedSources: [],
         selectedTicker: null,
+        selectedChartTicker: null,
       }),
-      
+
       setSelectedSources: (sources) => set({ selectedSources: sources }),
-      
       setSelectedTicker: (ticker) => set({ selectedTicker: ticker }),
-      
+      setSelectedChartTicker: (ticker) => set({ selectedChartTicker: ticker }),
+
       updateMessage: (id, updates) => set((state) => ({
         messages: state.messages.map((m) =>
           m.id === id ? { ...m, ...updates } : m
         ),
       })),
-      
+
       setMode: (mode) => set({ mode }),
     }),
     {
