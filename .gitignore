@@ -7,3 +7,7 @@ __pycache__
 CLAUDE.md
 stockbit
 docs/
+data/
+.playwright-mcp/
+*.log
+raw_data/
